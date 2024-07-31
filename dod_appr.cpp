@@ -96,7 +96,7 @@ void make_rand_shapes(sim& s, int amount)
     const auto dy = (float)real_vel_distr(engine);
     const auto dz = (float)real_vel_distr(engine);
     const Color c = GetColor(color_distr(engine)| 0xff) ;
-    switch (int_distr(engine))
+    switch (/*int_distr(engine)*/3)
     {
     case 0:
       {
@@ -178,28 +178,30 @@ void dod_main()
   {
     for(size_t i = 0; i < size; i++)
     {
-      DrawCube(p[i].p, cd[i].w, cd[i].h, cd[i].l, c[i]);
+      DrawRectangle(p[i].p.x, p[i].p.y, cd->w, cd->h, *c);
+      //DrawCube(p[i].p, cd[i].w, cd[i].h, cd[i].l, c[i]);
     }
   };
   auto draw_spheres = +[](const ecsid* entity, size_t size, position* p, sphere_dim* sd, Color* c)
   {
     for(size_t i = 0; i < size; i++)
     {
-      DrawSphere(p[i].p, sd[i].rad, c[i]);
+      DrawCircle(p[i].p.x, p[i].p.y, sd->rad, *c);
+      //DrawSphere(p[i].p, sd[i].rad, c[i]);
     }
   };
   auto draw_cylinders = +[](const ecsid* entity, size_t size, position* p, cylinder_dim* cd, Color* c)
   {
     for(size_t i = 0; i < size; i++)
     {
-      DrawCylinder(p[i].p, cd[i].rad_t, cd[i].rad_b, cd[i].h, cd[i].slices, c[i]);
+      //DrawCylinder(p[i].p, cd[i].rad_t, cd[i].rad_b, cd[i].h, cd[i].slices, c[i]);
     }
   };
   auto draw_capsules = +[](const ecsid* entity, size_t size, position* p, capsule_dim* cd, Color* c)
   {
     for(size_t i = 0; i < size; i++)
     {
-      DrawCapsule(p[i].p, cd[i].endpos, cd[i].rad, cd[i].slices, cd[i].rings, c[i]);
+      //DrawCapsule(p[i].p, cd[i].endpos, cd[i].rad, cd[i].slices, cd[i].rings, c[i]);
     }
   };
   auto input_func = +[](ecsid entity, std::tuple<float>& tuple, Camera* c)
@@ -246,11 +248,11 @@ void dod_main()
     const float dt = GetFrameTime();
     auto tuple = std::make_tuple(dt);
     BeginDrawing();
-    BeginMode3D(*cam);
+    //BeginMode3D(*cam);
     {
-      DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
-      DrawSphere(ARENA_ORIGIN, ARENA_RAD, ARENA_COL);
-      cam_q->each(input_func, tuple);
+      //DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
+      //DrawSphere(ARENA_ORIGIN, ARENA_RAD, ARENA_COL);
+      //cam_q->each(input_func, tuple);
       in_bounds_q->batch(in_bounds);
       move_q->batch(move, tuple);
       move_capsules_q->batch(move_capsules, tuple);
@@ -259,7 +261,7 @@ void dod_main()
       drawcyl_q->batch(draw_cylinders);
       drawcap_q->batch(draw_capsules);
     }
-    EndMode3D();
+    //EndMode3D();
     DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
     EndDrawing();
   }
