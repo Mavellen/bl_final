@@ -149,8 +149,13 @@ namespace ls::lecs
     }
     ecsid evict_entity(const size_t row)
     {
-      const ecsid last_pos = entities.size() - 1;
-      const ecsid swapped_eid = entities[last_pos];
+      // const ecsid last_pos = entities.size() - 1;
+      // const ecsid swapped_eid = entities[last_pos];
+      const ecsid swapped_eid = entities.back();
+      if(swapped_eid > 100000)
+      {
+        int i = 0;
+      }
       for (const auto column : clcs)
       {
         column->rswap(row);
@@ -333,6 +338,7 @@ namespace ls::lecs
       head = NULL_ID;
     }
     ~sim(){ reset(); }
+    size_t alive_entites() const { return entities.size() - avail_count; }
     void reset()
     {
       head = NULL_ID;
@@ -378,7 +384,7 @@ namespace ls::lecs
         return pair.first;
       const record& r = e_locations[pair.second];
       const ecsid swent = r.at->evict_entity(r.row);
-      e_locations[swent].row = r.row;
+      e_locations[ident(swent)].row = r.row; // ADDED IDENT
 
       const ecsid current_version = version(entity);
       const ecsid input_id = set_v(head, current_version+1);
@@ -474,6 +480,7 @@ namespace ls::lecs
     template<typename T>
     bool eval_system() const
     {
+      ecsid id = tyfo::id<T>;
       return allof.contains(tyfo::id<T>) && sizeof(T) > 1;
     }
     void eval_atype(const atype* at)

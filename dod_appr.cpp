@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include "raymath.h"
 #include "random"
 
 extern float CAMSPEED;
@@ -8,239 +9,224 @@ extern Vector3 ARENA_ORIGIN;
 extern float ARENA_RAD;
 extern float ARENA_DIM;
 extern Color ARENA_COL;
+extern int SPAWN_RATE;
+extern bool MORPH;
+extern bool LARGE_ONLY;
 
 extern void take_inputs(Camera& camera, float dt);
 
 #include "lecs.h"
 using namespace ls::lecs;
 
-enum shape_type : unsigned char
-{
-  CUBE, SPHERE, CYLINDER, CAPSULE,
-  NUM
-};
-
-struct cube{};
-struct sphere{};
-struct cylinder{};
-struct capsule{};
-
 struct position { Vector3 p; };
 struct velocity { Vector3 v; };
 struct cube_dim {float w,h,l; };
-struct sphere_dim {float rad; };
-struct cylinder_dim {float rad_t, rad_b, h; int slices;};
-struct capsule_dim {Vector3 endpos; float rad; int slices, rings;};
+struct small {};
+struct large {};
 
-void make_cube(sim& s, ecsid entity, const float x, const float y, const float z,
-  const float dx, const float dy, const float dz,
-  const float width, const float height, const float length,
-  const Color c)
+void in_bounds_condes(const ecsid* entity, size_t size, std::tuple<sim*>& tup, position* positions)
 {
-  s.add<cube>(entity);
-  s.add<position>(entity,Vector3{x,y,z});
-  s.add<velocity>(entity,Vector3{dx,dy,dz});
-  s.add<cube_dim>(entity,width,height,length);
-  s.add<Color>(entity,c.r, c.g, c.b, c.a);
+  std::vector<ecsid> r {};
+  r.reserve(size/4);
+  for(size_t k = 0; k < size; k++)
+  {
+    if(positions[k].p.x <= -RAD || positions[k].p.x >= RAD ||
+           positions[k].p.y <= -RAD || positions[k].p.y >= RAD ||
+           positions[k].p.z <= -RAD || positions[k].p.z >= RAD)
+    {
+      r.push_back(entity[k]);
+    }
+  }
+  sim* s = std::get<0>(tup);
+  for(const ecsid id : r)
+  {
+    s->erase(id);
+  }
 }
-void make_sphere(sim& s, ecsid entity, const float x, const float y, const float z,
-  const float dx, const float dy, const float dz,
-  const float radius, const Color c)
+void in_bounds_static(const ecsid* entity, size_t size, position* positions, velocity* velocities)
 {
-  s.add<sphere>(entity);
-  s.add<position>(entity,Vector3{x,y,z});
-  s.add<velocity>(entity,Vector3{dx,dy,dz});
-  s.add<sphere_dim>(entity,radius);
-  s.add<Color>(entity, c.r, c.g, c.b, c.a);
+  for(size_t k = 0; k < size; k++)
+  {
+    if(positions[k].p.x <= -RAD || positions[k].p.x >= RAD) velocities[k].v.x *= -1;
+    if(positions[k].p.y <= -RAD || positions[k].p.y >= RAD) velocities[k].v.y *= -1;
+    if(positions[k].p.z <= -RAD || positions[k].p.z >= RAD) velocities[k].v.z *= -1;
+  }
 }
-void make_cylinder(sim& s, ecsid entity, const float x, const float y, const float z,
-  const float dx, const float dy, const float dz,
-  const float rad_top, const float rad_bot, const float height, const int slices,
-  const Color c)
+void move(const ecsid* entity, size_t size, std::tuple<float>& tuple, position* p, velocity* v)
 {
-  s.add<cylinder>(entity);
-  s.add<position>(entity,Vector3{x,y,z});
-  s.add<velocity>(entity,Vector3{dx,dy,dz});
-  s.add<cylinder_dim>(entity,rad_top,rad_bot,height,slices);
-  s.add<Color>(entity, c.r, c.g, c.b, c.a);
+  float dt = std::get<0>(tuple);
+  for(size_t i = 0; i < size; i++)
+  {
+    p[i].p = Vector3Add(p[i].p, Vector3Scale(v[i].v, dt));
+  }
 }
-void make_capsule(sim& s, ecsid entity, const float x, const float y, const float z,
-  const float dx, const float dy, const float dz,
-  const float ex, const float ey, const float ez, const float radius, const int slices, const int rings,
-  const Color c)
+void draw(const ecsid* entity, size_t size, position* p, cube_dim* cd, Color* c)
 {
-  s.add<capsule>(entity);
-  s.add<position>(entity,Vector3{x,y,z});
-  s.add<velocity>(entity,Vector3{dx,dy,dz});
-  s.add<capsule_dim>(entity,Vector3{ex,ey,ez},radius,slices,rings);
-  s.add<Color>(entity, c.r,c.g,c.b,c.a);
+  for(size_t i = 0; i < size; i++)
+  {
+    DrawCube(p[i].p, cd[i].w, cd[i].h, cd[i].l, c[i]);
+  }
 }
-
-void make_rand_shapes(sim& s, int amount)
+void morph_color(const ecsid* entity, size_t size, Color* c)
 {
   static std::random_device device;
   static std::default_random_engine engine(device());
   static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
-  static std::uniform_int_distribution<> int_distr(0, NUM-1);
-  static std::uniform_real_distribution<> real_pos_distr(-100, 100);
-  static std::uniform_real_distribution<> real_vel_distr(-10, 10);
-  static std::uniform_real_distribution<> real_size_cube(0, 10);
-  static std::uniform_real_distribution<> real_size_sphere(0, 5);
-  do
+  Color col = GetColor(color_distr(engine)| 0xff);
+  for(size_t k = 0; k < size; k++)
   {
-    ecsid entity = s.entity();
-    const auto x = (float)real_pos_distr(engine);
-    const auto y = (float)real_pos_distr(engine);
-    const auto z = (float)real_pos_distr(engine);
-    const auto dx = (float)real_vel_distr(engine);
-    const auto dy = (float)real_vel_distr(engine);
-    const auto dz = (float)real_vel_distr(engine);
-    const Color c = GetColor(color_distr(engine)| 0xff) ;
-    switch (/*int_distr(engine)*/3)
-    {
-    case 0:
-      {
-        const auto wid = 10 + (float)real_size_cube(engine);
-        const auto hei = 10 + (float)real_size_cube(engine);
-        const auto len = 10 + (float)real_size_cube(engine);
-        make_cube(s,entity,x,y,z,dx,dy,dz,wid,hei,len,c);
-        break;
-      }
-    case 1:
-      {
-        const float radius = 5 + (float)real_size_sphere(engine);
-        make_sphere(s,entity,x,y,y,dx,dy,dz,radius,c);
-        break;
-      }
-    case 2:
-      {
-        const float rad_top = 5 + (float)real_size_sphere(engine);
-        const float rad_bot = 5 + (float)real_size_sphere(engine);
-        const float hei = 10 + (float)real_size_cube(engine);
-        const int slices = 10;
-        make_cylinder(s,entity,x,y,z,dx,dy,dz,rad_top,rad_bot,hei,slices,c);
-        break;
-      }
-    case 3:
-      {
-        const float endx = x + 5 + (float)real_size_sphere(engine);
-        const float endy = y + 5 + (float)real_size_sphere(engine);
-        const float endz = z + 5 + (float)real_size_sphere(engine);
-        const float radius = 5 + (float)real_size_sphere(engine);
-        const int slices = 10;
-        const int rings = 5;
-        make_capsule(s,entity,x,y,z,dx,dy,dz,endx,endy,endz,radius,slices,rings,c);
-        break;
-      }
-    default:
-      break;
-    }
-    --amount;
-  }while(amount > 0);
+    c[k] = col;
+  }
 }
+void input_func(ecsid entity, std::tuple<float>& tuple, Camera* c)
+{
+  take_inputs(*c, std::get<0>(tuple));
+};
 
-void dod_main()
+void dod_condes()
 {
   sim s;
-  auto in_bounds = +[](const ecsid* entity, size_t size, position* p, velocity* v)
-  {
-    for(size_t i = 0; i < size; i++)
-    {
-      if(p[i].p.x <= -RAD || p[i].p.x >= RAD){ v[i].v.x *= -1; }
-      if(p[i].p.y <= -RAD || p[i].p.y >= RAD){ v[i].v.y *= -1; }
-      if(p[i].p.z <= -RAD || p[i].p.z >= RAD){ v[i].v.z *= -1; }
-    }
-  };
-  auto move = +[](const ecsid* entity, size_t size, std::tuple<float>& tuple, position* p, velocity* v)
-  {
-    float dt = std::get<0>(tuple);
-    for(size_t i = 0; i < size; i++)
-    {
-      p[i].p.x += ( v[i].v.x * dt );
-      p[i].p.y += ( v[i].v.y * dt );
-      p[i].p.z += ( v[i].v.z * dt );
-    }
-  };
-  auto move_capsules = +[](const ecsid* entity, size_t size, std::tuple<float>& tuple, position* p, velocity* v, capsule_dim* cd)
-  {
-    float dt = std::get<0>(tuple);
-    for(size_t i = 0; i < size; i++)
-    {
-      p[i].p.x += ( v[i].v.x * dt );
-      p[i].p.y += ( v[i].v.y * dt );
-      p[i].p.z += ( v[i].v.z * dt );
-      cd[i].endpos.x += ( v[i].v.x * dt );
-      cd[i].endpos.y += ( v[i].v.y * dt );
-      cd[i].endpos.z += ( v[i].v.z * dt );
-    }
-  };
-  auto draw_cubes = +[](const ecsid* entity, size_t size, position* p, cube_dim* cd, Color* c)
-  {
-    for(size_t i = 0; i < size; i++)
-    {
-      DrawRectangle(p[i].p.x, p[i].p.y, cd->w, cd->h, *c);
-      //DrawCube(p[i].p, cd[i].w, cd[i].h, cd[i].l, c[i]);
-    }
-  };
-  auto draw_spheres = +[](const ecsid* entity, size_t size, position* p, sphere_dim* sd, Color* c)
-  {
-    for(size_t i = 0; i < size; i++)
-    {
-      DrawCircle(p[i].p.x, p[i].p.y, sd->rad, *c);
-      //DrawSphere(p[i].p, sd[i].rad, c[i]);
-    }
-  };
-  auto draw_cylinders = +[](const ecsid* entity, size_t size, position* p, cylinder_dim* cd, Color* c)
-  {
-    for(size_t i = 0; i < size; i++)
-    {
-      //DrawCylinder(p[i].p, cd[i].rad_t, cd[i].rad_b, cd[i].h, cd[i].slices, c[i]);
-    }
-  };
-  auto draw_capsules = +[](const ecsid* entity, size_t size, position* p, capsule_dim* cd, Color* c)
-  {
-    for(size_t i = 0; i < size; i++)
-    {
-      //DrawCapsule(p[i].p, cd[i].endpos, cd[i].rad, cd[i].slices, cd[i].rings, c[i]);
-    }
-  };
-  auto input_func = +[](ecsid entity, std::tuple<float>& tuple, Camera* c)
-  {
-    take_inputs(*c, std::get<0>(tuple));
-  };
+
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
 
   const ecsid camera = s.entity();
   s.add<Camera>(camera, Vector3{ .0f, 5.0f, -600.0f},
     Vector3{.0f, 5.0f, .0f}, Vector3{.0f, 1.0f, .0f}, 60, CAMERA_PERSPECTIVE);
   auto cam = s.get<Camera>(camera);
 
-  make_rand_shapes(s, ENTITY_AMOUNT);
-
   const auto in_bounds_q = s.query();
-  const auto move_q = s.query();
-  const auto move_capsules_q = s.query();
-  const auto drawc_q = s.query();
-  const auto draws_q = s.query();
-  const auto drawcyl_q = s.query();
-  const auto drawcap_q = s.query();
+  const auto mov_q = s.query();
+  const auto draw_q = s.query();
   const auto cam_q = s.query();
-  in_bounds_q->all_of<position,velocity>();
-  move_q->all_of<position,velocity>();
-  move_q->none_of<capsule>();
-  move_capsules_q->all_of<position, velocity, capsule_dim>();
-  drawc_q->all_of<position,cube_dim,Color>();
-  draws_q->all_of<position,sphere_dim,Color>();
-  drawcyl_q->all_of<position,cylinder_dim,Color>();
-  drawcap_q->all_of<position,capsule_dim,Color>();
+  in_bounds_q->all_of<position>();
+  mov_q->all_of<position,velocity>();
+  draw_q->all_of<position,cube_dim,Color>();
   cam_q->all_of<Camera>();
+
   in_bounds_q->update();
-  move_q->update();
-  move_capsules_q->update();
-  drawc_q->update();
-  draws_q->update();
-  drawcyl_q->update();
-  drawcap_q->update();
+  mov_q->update();
+  draw_q->update();
   cam_q->update();
+
+  auto sim_tuple = std::make_tuple(&s);
+
+  float combined = 0;
+  int num_of_spawns = 0;
+  while(!WindowShouldClose())
+  {
+    ClearBackground(BLACK);
+    const float dt = GetFrameTime();
+    combined += dt;
+    auto tuple = std::make_tuple(dt);
+    BeginDrawing();
+    BeginMode3D(*cam);
+    {
+      DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
+      cam_q->each(input_func, tuple);
+      in_bounds_q->batch(in_bounds_condes, sim_tuple);
+      mov_q->batch(move, tuple);
+      draw_q->batch(draw);
+      if(num_of_spawns < 10)
+      {
+        for(size_t k = 0; k < SPAWN_RATE; k++)
+        {
+          const auto dx = (float)real_vel_distr(engine);
+          const auto dy = (float)real_vel_distr(engine);
+          const auto dz = (float)real_vel_distr(engine);
+          const Color c = GetColor(color_distr(engine)| 0xff);
+          ecsid id = s.entity();
+          s.add<position>(id, (Vector3){0, 0, 0});
+          s.add<velocity>(id, (Vector3){dx,dy,dz});
+          s.add<Color>(id, c.r, c.g, c.b, c.a);
+          s.add<cube_dim>(id, 10, 10, 10);
+        }
+        ++num_of_spawns;
+      }
+      if(combined >= 1)
+      {
+        num_of_spawns=0;
+        combined=0;
+      }
+    }
+    EndMode3D();
+    DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
+    DrawText(TextFormat("Cubes: %i", s.alive_entites()-1), 0, 50, 20, RED);
+    EndDrawing();
+  }
+}
+
+void dod_static()
+{
+  sim s;
+
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+
+  const ecsid camera = s.entity();
+  s.add<Camera>(camera, Vector3{ .0f, 5.0f, -600.0f},
+    Vector3{.0f, 5.0f, .0f}, Vector3{.0f, 1.0f, .0f}, 60, CAMERA_PERSPECTIVE);
+  auto cam = s.get<Camera>(camera);
+
+  size_t i = 0;
+  for(; i < ENTITY_AMOUNT / 2; i++)
+  {
+    const auto dx = (float)real_vel_distr(engine);
+    const auto dy = (float)real_vel_distr(engine);
+    const auto dz = (float)real_vel_distr(engine);
+    const Color c = GetColor(color_distr(engine)| 0xff);
+    ecsid entity = s.entity();
+    s.add<position>(entity, (Vector3){0, 0, 0});
+    s.add<velocity>(entity, (Vector3){dx,dy,dz});
+    s.add<Color>(entity, c.r, c.g, c.b, c.a);
+    s.add<cube_dim>(entity, 5, 5, 5);
+    s.add<small>(entity);
+  }
+  for(; i < ENTITY_AMOUNT; i++)
+  {
+    const auto dx = (float)real_vel_distr(engine);
+    const auto dy = (float)real_vel_distr(engine);
+    const auto dz = (float)real_vel_distr(engine);
+    const Color c = GetColor(color_distr(engine)| 0xff);
+    ecsid entity = s.entity();
+    s.add<position>(entity, (Vector3){0, 0, 0});
+    s.add<velocity>(entity, (Vector3){dx,dy,dz});
+    s.add<Color>(entity, c.r, c.g, c.b, c.a);
+    s.add<cube_dim>(entity, 10, 10, 10);
+    s.add<large>(entity);
+  }
+
+  const auto in_bounds_all_q = s.query();
+  const auto mov_all_q = s.query();
+  const auto draw_all_q = s.query();
+  const auto cam_q = s.query();
+  in_bounds_all_q->all_of<position,velocity>();
+  mov_all_q->all_of<position,velocity>();
+  draw_all_q->all_of<position,cube_dim,Color>();
+  cam_q->all_of<Camera>();
+
+  const auto in_bounds_large_q = s.query();
+  const auto mov_large_q = s.query();
+  const auto draw_large_q = s.query();
+  const auto morph_large_q = s.query();
+  in_bounds_large_q->all_of<position, velocity, large>();
+  mov_large_q->all_of<position, velocity, large>();
+  draw_large_q->all_of<position, cube_dim, Color, large>();
+  morph_large_q->all_of<Color, large>();
+
+  in_bounds_all_q->update();
+  mov_all_q->update();
+  draw_all_q->update();
+  cam_q->update();
+
+  in_bounds_large_q->update();
+  mov_large_q->update();
+  draw_large_q->update();
+  morph_large_q->update();
 
   while(!WindowShouldClose())
   {
@@ -248,21 +234,30 @@ void dod_main()
     const float dt = GetFrameTime();
     auto tuple = std::make_tuple(dt);
     BeginDrawing();
-    //BeginMode3D(*cam);
+    BeginMode3D(*cam);
     {
-      //DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
-      //DrawSphere(ARENA_ORIGIN, ARENA_RAD, ARENA_COL);
-      //cam_q->each(input_func, tuple);
-      in_bounds_q->batch(in_bounds);
-      move_q->batch(move, tuple);
-      move_capsules_q->batch(move_capsules, tuple);
-      drawc_q->batch(draw_cubes);
-      draws_q->batch(draw_spheres);
-      drawcyl_q->batch(draw_cylinders);
-      drawcap_q->batch(draw_capsules);
+      DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
+      cam_q->each(input_func, tuple);
+      if(MORPH)
+        morph_large_q->batch(morph_color);
+      if(LARGE_ONLY)
+      {
+        in_bounds_large_q->batch(in_bounds_static);
+        mov_large_q->batch(move, tuple);
+        draw_large_q->batch(draw);
+      }
+      else
+      {
+        in_bounds_all_q->batch(in_bounds_static);
+        mov_all_q->batch(move, tuple);
+        draw_all_q->batch(draw);
+      }
     }
-    //EndMode3D();
+    EndMode3D();
     DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
+    DrawText(TextFormat("Cubes: %i", s.alive_entites()-1), 0, 50, 20, RED);
+    DrawText(TextFormat("Morph: %i", MORPH ? 1 : 0), 0, 100, 20, RED);
+    DrawText(TextFormat("Large Only %i", LARGE_ONLY ? 1 : 0), 0, 150, 20, RED);
     EndDrawing();
   }
 }

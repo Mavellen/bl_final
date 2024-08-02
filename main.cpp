@@ -7,15 +7,22 @@ int WIDTH = 800;
 int HEIGHT = 800;
 float CAMSPEED = 500.0f;
 float RAD = 250;
-int ENTITY_AMOUNT = 10000;
+int ENTITY_AMOUNT = 1000000;
 Vector3 ARENA_ORIGIN = {0,0,0};
 float ARENA_RAD = 1;
 float ARENA_DIM = RAD * 2;
 Color ARENA_COL = RAYWHITE;
+int SPAWN_RATE = 500;
+bool MORPH = false;
+bool LARGE_ONLY = false;
 
 
-extern void oop_main();
-extern void dod_main();
+extern void oop_condes();
+extern void oop_static();
+extern void dod_condes();
+extern void dod_static();
+extern void max_condes();
+extern void max_static();
 
 void take_inputs(Camera& camera, const float dt)
 {
@@ -33,19 +40,16 @@ void take_inputs(Camera& camera, const float dt)
     CameraMoveRight(&camera, -CAMSPEED * dt, true);
   }
 
+  if(IsKeyPressed(KEY_ONE))
+    MORPH = !MORPH;
+  if(IsKeyPressed(KEY_TWO))
+    LARGE_ONLY = !LARGE_ONLY;
+
   CameraYaw(&camera, -GetMouseDelta().x * dt, false);
   CameraPitch(&camera, -GetMouseDelta().y * dt, true, false, false);
-
-  if(IsKeyPressed(KEY_ONE))
-  {
-    CAMSPEED += 50.0f;
-  }
-  if(IsKeyPressed(KEY_TWO))
-  {
-    CAMSPEED -= 50.0f;
-  }
 }
 
+#undef CONDES
 /*
  * Systems
  * - move and draw all entities on screen, regardless of type
@@ -57,9 +61,17 @@ void take_inputs(Camera& camera, const float dt)
  */
 int main()
 {
-  InitWindow(WIDTH, HEIGHT, "ECS");
+  InitWindow(WIDTH, HEIGHT, "ECSTEST");
   DisableCursor();
-  //oop_main();
-  dod_main();
+#ifdef CONDES
+  //max_condes();
+  //oop_condes();
+  dod_condes();
+#else
+  //max_static();
+  //oop_static();
+  dod_static();
+#endif
+  CloseWindow();
   return 1;
 }
