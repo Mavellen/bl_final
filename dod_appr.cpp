@@ -14,6 +14,7 @@ extern bool MORPH;
 extern bool LARGE_ONLY;
 
 extern void take_inputs(Camera& camera, float dt);
+extern void take_inputs();
 
 #include "lecs.h"
 using namespace ls::lecs;
@@ -82,6 +83,147 @@ void input_func(ecsid entity, std::tuple<float>& tuple, Camera* c)
 {
   take_inputs(*c, std::get<0>(tuple));
 };
+
+void dod_condes_raw()
+{
+  sim s;
+
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+
+  const auto in_bounds_q = s.query();
+  const auto mov_q = s.query();
+  in_bounds_q->all_of<position>();
+  mov_q->all_of<position,velocity>();
+
+  in_bounds_q->update();
+  mov_q->update();
+
+  auto sim_tuple = std::make_tuple(&s);
+
+  float combined = 0;
+  int num_of_spawns = 0;
+  while(true)
+  {
+    if(IsKeyDown(KEY_Q)) break;
+    const float dt = GetFrameTime();
+    combined += dt;
+    auto tuple = std::make_tuple(dt);
+    in_bounds_q->batch(in_bounds_condes, sim_tuple);
+    mov_q->batch(move, tuple);
+    if(num_of_spawns < 10)
+    {
+      for(size_t k = 0; k < SPAWN_RATE; k++)
+      {
+        const auto dx = (float)real_vel_distr(engine);
+        const auto dy = (float)real_vel_distr(engine);
+        const auto dz = (float)real_vel_distr(engine);
+        const Color c = GetColor(color_distr(engine)| 0xff);
+        ecsid id = s.entity();
+        s.add<position>(id, (Vector3){0, 0, 0});
+        s.add<velocity>(id, (Vector3){dx,dy,dz});
+        s.add<Color>(id, c.r, c.g, c.b, c.a);
+        s.add<cube_dim>(id, 10, 10, 10);
+      }
+      ++num_of_spawns;
+    }
+    if(combined >= 1)
+    {
+      num_of_spawns=0;
+      combined=0;
+    }
+    ClearBackground(BLACK);
+    BeginDrawing();
+    DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
+    DrawText(TextFormat("Cubes: %i", s.alive_entites()), 0, 50, 20, RED);
+    EndDrawing();
+  }
+}
+
+void dod_static_raw()
+{
+  sim s;
+
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+
+  size_t i = 0;
+  for(; i < ENTITY_AMOUNT / 2; i++)
+  {
+    const auto dx = (float)real_vel_distr(engine);
+    const auto dy = (float)real_vel_distr(engine);
+    const auto dz = (float)real_vel_distr(engine);
+    const Color c = GetColor(color_distr(engine)| 0xff);
+    ecsid entity = s.entity();
+    s.add<position>(entity, (Vector3){0, 0, 0});
+    s.add<velocity>(entity, (Vector3){dx,dy,dz});
+    s.add<Color>(entity, c.r, c.g, c.b, c.a);
+    s.add<cube_dim>(entity, 5, 5, 5);
+    s.add<small>(entity);
+  }
+  for(; i < ENTITY_AMOUNT; i++)
+  {
+    const auto dx = (float)real_vel_distr(engine);
+    const auto dy = (float)real_vel_distr(engine);
+    const auto dz = (float)real_vel_distr(engine);
+    const Color c = GetColor(color_distr(engine)| 0xff);
+    ecsid entity = s.entity();
+    s.add<position>(entity, (Vector3){0, 0, 0});
+    s.add<velocity>(entity, (Vector3){dx,dy,dz});
+    s.add<Color>(entity, c.r, c.g, c.b, c.a);
+    s.add<cube_dim>(entity, 10, 10, 10);
+    s.add<large>(entity);
+  }
+
+  const auto in_bounds_all_q = s.query();
+  const auto mov_all_q = s.query();
+  in_bounds_all_q->all_of<position,velocity>();
+  mov_all_q->all_of<position,velocity>();
+
+  const auto in_bounds_large_q = s.query();
+  const auto mov_large_q = s.query();
+  const auto morph_large_q = s.query();
+  in_bounds_large_q->all_of<position, velocity, large>();
+  mov_large_q->all_of<position, velocity, large>();
+  morph_large_q->all_of<Color, large>();
+
+  in_bounds_all_q->update();
+  mov_all_q->update();
+  in_bounds_large_q->update();
+  mov_large_q->update();
+  morph_large_q->update();
+
+  while(true)
+  {
+    take_inputs();
+    if(IsKeyDown(KEY_Q)) break;
+    const float dt = GetFrameTime();
+    auto tuple = std::make_tuple(dt);
+    if(MORPH)
+      morph_large_q->batch(morph_color);
+    if(LARGE_ONLY)
+    {
+      in_bounds_large_q->batch(in_bounds_static);
+      mov_large_q->batch(move, tuple);
+    }
+    else
+    {
+      in_bounds_all_q->batch(in_bounds_static);
+      mov_all_q->batch(move, tuple);
+    }
+    ClearBackground(BLACK);
+    BeginDrawing();
+    DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
+    DrawText(TextFormat("Cubes: %i", s.alive_entites()), 0, 50, 20, RED);
+    DrawText(TextFormat("Morph: %i", MORPH ? 1 : 0), 0, 100, 20, RED);
+    DrawText(TextFormat("Large Only %i", LARGE_ONLY ? 1 : 0), 0, 150, 20, RED);
+    EndDrawing();
+  }
+}
 
 void dod_condes()
 {
