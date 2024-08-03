@@ -16,6 +16,7 @@ extern bool MORPH;
 extern bool LARGE_ONLY;
 
 extern void take_inputs(Camera& camera, float dt);
+extern void take_inputs();
 
 class movement_component
 {
@@ -88,6 +89,154 @@ public:
   appearance_component* ac;
 };
 
+void oop_condes_raw()
+{
+  entity** entities = (entity**) malloc(sizeof(entity*) * ENTITY_AMOUNT);
+  size_t* dense = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
+  size_t component_amount = 0;
+  size_t* sparse = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
+  size_t head = 100;
+  size_t count = 0;
+  size_t* recvec = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
+  size_t entity_count = 0;
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+
+  float combined = 0;
+  int num_of_spawns = 0;
+  while(true)
+  {
+    if(IsKeyDown(KEY_Q)) break;
+    const float dt = GetFrameTime();
+    combined += dt;
+    for(size_t k = 0; k < component_amount; k++)
+    {
+      entity* entt = entities[k];
+      if(!entt->in_bounds_condes())
+      {
+        const size_t last = component_amount-1;
+        const size_t removed_entity = dense[sparse[k]];
+        const size_t moved_entity = dense[last];
+        dense[k] = moved_entity;
+        sparse[moved_entity] = k;
+        delete entities[k];
+        entities[k] = entities[last];
+        --component_amount;
+        recvec[removed_entity] = head;
+        head = removed_entity;
+        ++count;
+      }
+    }
+    for(size_t k = 0; k < component_amount; k++)
+    {
+      entity* entt = entities[k];
+      entt->move(dt);
+    }
+    if(num_of_spawns < 10)
+    {
+      for(size_t k = 0; k < SPAWN_RATE; k++)
+      {
+        const auto dx = (float)real_vel_distr(engine);
+        const auto dy = (float)real_vel_distr(engine);
+        const auto dz = (float)real_vel_distr(engine);
+        const Color c = GetColor(color_distr(engine)| 0xff) ;
+        size_t id;
+        if(count > 0)
+        {
+          id = head;
+          head = recvec[head];
+          --count;
+        }
+        else
+        {
+          if(entity_count == ENTITY_AMOUNT) return;
+          id = entity_count;
+          recvec[entity_count] = entity_count;
+          ++entity_count;
+        }
+        sparse[id] = component_amount;
+        dense[component_amount] = id;
+        entities[component_amount] = new entity{
+          new movement_component({0,0,0}, {dx,dy,dz}),
+          new appearance_component{c, 10, 10, 10, false}
+        };
+        component_amount++;
+      }
+      ++num_of_spawns;
+    }
+    if(combined >= 1)
+    {
+      num_of_spawns=0;
+      combined=0;
+    }
+    ClearBackground(BLACK);
+    BeginDrawing();
+    DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
+    DrawText(TextFormat("Cubes: %i", entity_count-count), 0, 50, 20, RED);
+    EndDrawing();
+  }
+}
+
+void oop_static_raw()
+{
+  entity** entities = (entity**) malloc(sizeof(entity*) * ENTITY_AMOUNT);
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+  size_t i = 0;
+  for(;i < ENTITY_AMOUNT / 2; i++)
+  {
+    const auto dx = (float)real_vel_distr(engine);
+    const auto dy = (float)real_vel_distr(engine);
+    const auto dz = (float)real_vel_distr(engine);
+    const Color c = GetColor(color_distr(engine)| 0xff);
+    entities[i] = new entity{
+      new movement_component({0,0,0}, {dx,dy,dz}),
+      new appearance_component(c,5, 5, 5, false)
+    };
+  }
+  for(;i < ENTITY_AMOUNT; i++)
+  {
+    const auto dx = (float)real_vel_distr(engine);
+    const auto dy = (float)real_vel_distr(engine);
+    const auto dz = (float)real_vel_distr(engine);
+    const Color c = GetColor(color_distr(engine)| 0xff);
+    entities[i] = new entity{
+      new movement_component({0,0,0}, {dx,dy,dz}),
+      new appearance_component(c,5, 5, 5, true)
+    };
+  }
+  while(true)
+  {
+    take_inputs();
+    if(IsKeyDown(KEY_Q)) break;
+    const float dt = GetFrameTime();
+    Color c;
+    if(MORPH)
+      c = GetColor(color_distr(engine)| 0xff);
+    for(size_t k = 0; k < ENTITY_AMOUNT; k++)
+    {
+      entity* e = entities[k];
+      const bool is_large = e->ac->large();
+      if(LARGE_ONLY)
+        if(!is_large) continue;
+      e->in_bounds_static();
+      if(MORPH && is_large)
+        e->ac->set_color(c);
+      e->move(dt);
+    }
+    ClearBackground(BLACK);
+    BeginDrawing();
+    DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
+    DrawText(TextFormat("Cubes: %i", ENTITY_AMOUNT), 0, 50, 20, RED);
+    DrawText(TextFormat("Morph: %i", MORPH ? 1 : 0), 0, 100, 20, RED);
+    DrawText(TextFormat("Large Only %i", LARGE_ONLY ? 1 : 0), 0, 150, 20, RED);
+    EndDrawing();
+  }
+}
 
 void oop_condes()
 {
