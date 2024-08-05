@@ -7,14 +7,20 @@ int WIDTH = 800;
 int HEIGHT = 800;
 float CAMSPEED = 500.0f;
 float RAD = 250;
-int ENTITY_AMOUNT = 1000000;
+
 Vector3 ARENA_ORIGIN = {0,0,0};
 float ARENA_RAD = 1;
 float ARENA_DIM = RAD * 2;
 Color ARENA_COL = RAYWHITE;
-int SPAWN_RATE = 500;
-bool MORPH = false;
-bool LARGE_ONLY = false;
+
+size_t DIRECTIONS = 100;
+auto dirlux = new float[DIRECTIONS];
+auto dirluy = new float[DIRECTIONS];
+auto dirluz = new float[DIRECTIONS];
+auto pdcolors = new Color[DIRECTIONS];
+
+double MAX_FRAMES = 3600;
+double avgframetime = 0;
 
 
 extern void oop_condes();
@@ -46,59 +52,47 @@ void take_inputs(Camera& camera, const float dt)
     CameraMoveRight(&camera, -CAMSPEED * dt, true);
   }
 
-  if(IsKeyPressed(KEY_ONE))
-    MORPH = !MORPH;
-  if(IsKeyPressed(KEY_TWO))
-    LARGE_ONLY = !LARGE_ONLY;
-
   CameraYaw(&camera, -GetMouseDelta().x * dt, false);
   CameraPitch(&camera, -GetMouseDelta().y * dt, true, false, false);
 }
-void take_inputs()
-{
-  if(IsKeyPressed(KEY_ONE))
-    MORPH = !MORPH;
-  if(IsKeyPressed(KEY_TWO))
-    LARGE_ONLY = !LARGE_ONLY;
-}
 
-#undef CONDES
-#define RAW
-/*
- * Systems
- * - move and draw all entities on screen, regardless of type
- * - change data of specific type
- * - draw only specific type
- * - deconstruct all entites of a type and re-construct them each frame
- *
- *
- */
+int ENTITY_AMOUNT = 1000000;
+int SPAWN_RATE = 500;
+
 int main()
 {
+  static std::random_device device;
+  static std::default_random_engine engine(device());
+  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
+  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+
+  for(size_t i = 0; i < DIRECTIONS; i++)
+  {
+    dirlux[i] = (float)real_vel_distr(engine);
+    dirluy[i] = (float)real_vel_distr(engine);
+    dirluz[i] = (float)real_vel_distr(engine);
+    pdcolors[i] = GetColor(color_distr(engine) | 0xff);
+  }
+
   InitWindow(WIDTH, HEIGHT, "ECSTEST");
   DisableCursor();
-#ifdef CONDES
-#ifdef RAW
-  //max_condes_raw();
   //max_condes_raw();
   //oop_condes_raw();
   //dod_condes_raw();
-#else
+
   //max_condes();
   //oop_condes();
   //dod_condes();
-#endif
-#else
-#ifdef RAW
+
   //max_static_raw();
   //oop_static_raw();
   dod_static_raw();
-#else
+
   //max_static();
   //oop_static();
   //dod_static();
-#endif
-#endif
+
   CloseWindow();
+  printf("AVGFT: %f", avgframetime);
   return 1;
 }

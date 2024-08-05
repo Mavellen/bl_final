@@ -12,11 +12,15 @@ extern float ARENA_RAD;
 extern float ARENA_DIM;
 extern Color ARENA_COL;
 extern int SPAWN_RATE;
-extern bool MORPH;
-extern bool LARGE_ONLY;
 
+extern size_t DIRECTIONS;
+extern float* dirlux;
+extern float* dirluy;
+extern float* dirluz;
+extern Color* pdcolors;
+extern double avgframetime;
+extern double MAX_FRAMES;
 extern void take_inputs(Camera& camera, float dt);
-extern void take_inputs();
 
 class movement_component
 {
@@ -50,20 +54,17 @@ private:
 class appearance_component
 {
 public:
-  appearance_component(const Color c, const float w, const float h, const float l, const bool is_large):
-  color(c), width(w), height(h), length(l), is_large(is_large) {}
+  appearance_component(const Color c, const float w, const float h, const float l):
+  color(c), width(w), height(h), length(l){}
   void draw(const Vector3 position) const
   {
     DrawCube(position, width, height, length, color);
   }
   void set_color(Color c){color = c;}
-  bool large() const {return is_large;}
 private:
   Color color;
   float width, height, length;
-  bool is_large;
 };
-
 class entity
 {
 public:
@@ -91,78 +92,81 @@ public:
 
 void oop_condes_raw()
 {
-  entity** entities = (entity**) malloc(sizeof(entity*) * ENTITY_AMOUNT);
-  size_t* dense = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
-  size_t component_amount = 0;
-  size_t* sparse = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
-  size_t head = 100;
+  const auto agents = new entity*[ENTITY_AMOUNT];
+  const auto dense = new size_t[ENTITY_AMOUNT];
+  const auto sparse = new size_t[ENTITY_AMOUNT];
+  size_t active = 0;
+  size_t head = 0;
   size_t count = 0;
-  size_t* recvec = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
+
+  const auto entities = new size_t[ENTITY_AMOUNT];
   size_t entity_count = 0;
-  static std::random_device device;
-  static std::default_random_engine engine(device());
-  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
-  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
+
+  double iterations = 0;
+  double total_frametime = 0;
 
   float combined = 0;
   int num_of_spawns = 0;
   while(true)
   {
     if(IsKeyDown(KEY_Q)) break;
+    ++iterations;
     const float dt = GetFrameTime();
     combined += dt;
-    for(size_t k = 0; k < component_amount; k++)
+    total_frametime += dt;
+
+    for(size_t k = 0; k < active; k++)
     {
-      entity* entt = entities[k];
+      const entity* entt = agents[k];
       if(!entt->in_bounds_condes())
       {
-        const size_t last = component_amount-1;
+        const size_t last = active-1;
         const size_t removed_entity = dense[sparse[k]];
         const size_t moved_entity = dense[last];
         dense[k] = moved_entity;
         sparse[moved_entity] = k;
-        delete entities[k];
+        delete agents[k];
+        agents[k] = agents[last];
         entities[k] = entities[last];
-        --component_amount;
-        recvec[removed_entity] = head;
+        --active;
+        entities[removed_entity] = head;
         head = removed_entity;
         ++count;
+        continue;
       }
-    }
-    for(size_t k = 0; k < component_amount; k++)
-    {
-      entity* entt = entities[k];
       entt->move(dt);
     }
     if(num_of_spawns < 10)
     {
       for(size_t k = 0; k < SPAWN_RATE; k++)
       {
-        const auto dx = (float)real_vel_distr(engine);
-        const auto dy = (float)real_vel_distr(engine);
-        const auto dz = (float)real_vel_distr(engine);
-        const Color c = GetColor(color_distr(engine)| 0xff) ;
         size_t id;
         if(count > 0)
         {
           id = head;
-          head = recvec[head];
+          head = entities[head];
           --count;
         }
         else
         {
           if(entity_count == ENTITY_AMOUNT) return;
           id = entity_count;
-          recvec[entity_count] = entity_count;
+          entities[entity_count] = entity_count;
           ++entity_count;
         }
-        sparse[id] = component_amount;
-        dense[component_amount] = id;
-        entities[component_amount] = new entity{
-          new movement_component({0,0,0}, {dx,dy,dz}),
-          new appearance_component{c, 10, 10, 10, false}
+        sparse[id] = active;
+        dense[active] = id;
+        agents[active] = new entity{
+          new movement_component(
+            {0,0,0},
+            {
+            dirlux[id % DIRECTIONS],
+            dirluy[id % DIRECTIONS],
+            dirluz[id % DIRECTIONS]
+            }),
+          new appearance_component{pdcolors[id % DIRECTIONS], 10, 10, 10}
         };
-        component_amount++;
+        active++;
       }
       ++num_of_spawns;
     }
@@ -176,79 +180,64 @@ void oop_condes_raw()
     DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
     DrawText(TextFormat("Cubes: %i", entity_count-count), 0, 50, 20, RED);
     EndDrawing();
+    if(iterations >= MAX_FRAMES) break;
   }
+  avgframetime = total_frametime / iterations;
 }
 
 void oop_static_raw()
 {
-  entity** entities = (entity**) malloc(sizeof(entity*) * ENTITY_AMOUNT);
-  static std::random_device device;
-  static std::default_random_engine engine(device());
-  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
-  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
-  size_t i = 0;
-  for(;i < ENTITY_AMOUNT / 2; i++)
+  const auto agents = new entity*[ENTITY_AMOUNT];
+
+  for(size_t i = 0; i < ENTITY_AMOUNT; i++)
   {
-    const auto dx = (float)real_vel_distr(engine);
-    const auto dy = (float)real_vel_distr(engine);
-    const auto dz = (float)real_vel_distr(engine);
-    const Color c = GetColor(color_distr(engine)| 0xff);
-    entities[i] = new entity{
-      new movement_component({0,0,0}, {dx,dy,dz}),
-      new appearance_component(c,5, 5, 5, false)
+    agents[i] = new entity{
+      new movement_component(
+        {0,0,0},
+        {
+        dirlux[i % DIRECTIONS],
+        dirluy[i % DIRECTIONS],
+        dirluz[i % DIRECTIONS]
+        }),
+      new appearance_component{pdcolors[i % DIRECTIONS], 10, 10, 10}
     };
   }
-  for(;i < ENTITY_AMOUNT; i++)
-  {
-    const auto dx = (float)real_vel_distr(engine);
-    const auto dy = (float)real_vel_distr(engine);
-    const auto dz = (float)real_vel_distr(engine);
-    const Color c = GetColor(color_distr(engine)| 0xff);
-    entities[i] = new entity{
-      new movement_component({0,0,0}, {dx,dy,dz}),
-      new appearance_component(c,5, 5, 5, true)
-    };
-  }
+
+  double iterations = 0;
+  double total_frametime = 0;
+
   while(true)
   {
-    take_inputs();
     if(IsKeyDown(KEY_Q)) break;
+    ++iterations;
     const float dt = GetFrameTime();
-    Color c;
-    if(MORPH)
-      c = GetColor(color_distr(engine)| 0xff);
+    total_frametime += dt;
     for(size_t k = 0; k < ENTITY_AMOUNT; k++)
     {
-      entity* e = entities[k];
-      const bool is_large = e->ac->large();
-      if(LARGE_ONLY)
-        if(!is_large) continue;
+      const entity* e = agents[k];
       e->in_bounds_static();
-      if(MORPH && is_large)
-        e->ac->set_color(c);
       e->move(dt);
     }
     ClearBackground(BLACK);
     BeginDrawing();
     DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
     DrawText(TextFormat("Cubes: %i", ENTITY_AMOUNT), 0, 50, 20, RED);
-    DrawText(TextFormat("Morph: %i", MORPH ? 1 : 0), 0, 100, 20, RED);
-    DrawText(TextFormat("Large Only %i", LARGE_ONLY ? 1 : 0), 0, 150, 20, RED);
     EndDrawing();
+    if(iterations >= MAX_FRAMES) break;
   }
+  avgframetime = total_frametime / iterations;
 }
 
 void oop_condes()
 {
-  entity** entities = (entity**) malloc(sizeof(entity*) * ENTITY_AMOUNT);
-  size_t* dense = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
-  size_t component_amount = 0;
-
-  size_t* sparse = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
-  size_t head = 100;
+  const auto agents = new entity*[ENTITY_AMOUNT];
+  const auto dense = new size_t[ENTITY_AMOUNT];
+  const auto sparse = new size_t[ENTITY_AMOUNT];
+  size_t active = 0;
+  size_t head = 0;
   size_t count = 0;
 
-  size_t* recvec = (size_t*)malloc(sizeof(size_t) * ENTITY_AMOUNT);
+  const auto entities = new size_t[ENTITY_AMOUNT];
   size_t entity_count = 0;
 
   Camera camera {
@@ -259,46 +248,43 @@ void oop_condes()
       CAMERA_PERSPECTIVE
     };
 
-  static std::random_device device;
-  static std::default_random_engine engine(device());
-  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
-  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
-
+  double iterations = 0;
+  double total_frametime = 0;
 
   float combined = 0;
   int num_of_spawns = 0;
   while(!WindowShouldClose())
   {
     ClearBackground(BLACK);
+    ++iterations;
     const float dt = GetFrameTime();
     combined += dt;
+    total_frametime += dt;
     BeginDrawing();
       BeginMode3D(camera);
     {
       DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
-      DrawSphere(ARENA_ORIGIN, ARENA_RAD, ARENA_COL);
       take_inputs(camera, dt);
-      for(size_t k = 0; k < component_amount; k++)
+
+      for(size_t k = 0; k < active; k++)
       {
-        entity* entt = entities[k];
+        const entity* entt = agents[k];
         if(!entt->in_bounds_condes())
         {
-          const size_t last = component_amount-1;
+          const size_t last = active-1;
           const size_t removed_entity = dense[sparse[k]];
           const size_t moved_entity = dense[last];
           dense[k] = moved_entity;
           sparse[moved_entity] = k;
-          delete entities[k];
+          delete agents[k];
+          agents[k] = agents[last];
           entities[k] = entities[last];
-          --component_amount;
-          recvec[removed_entity] = head;
+          --active;
+          entities[removed_entity] = head;
           head = removed_entity;
           ++count;
+          continue;
         }
-      }
-      for(size_t k = 0; k < component_amount; k++)
-      {
-        entity* entt = entities[k];
         entt->move(dt);
         entt->draw();
       }
@@ -306,31 +292,33 @@ void oop_condes()
       {
         for(size_t k = 0; k < SPAWN_RATE; k++)
         {
-          const auto dx = (float)real_vel_distr(engine);
-          const auto dy = (float)real_vel_distr(engine);
-          const auto dz = (float)real_vel_distr(engine);
-          const Color c = GetColor(color_distr(engine)| 0xff) ;
           size_t id;
           if(count > 0)
           {
             id = head;
-            head = recvec[head];
+            head = entities[head];
             --count;
           }
           else
           {
             if(entity_count == ENTITY_AMOUNT) return;
             id = entity_count;
-            recvec[entity_count] = entity_count;
+            entities[entity_count] = entity_count;
             ++entity_count;
           }
-          sparse[id] = component_amount;
-          dense[component_amount] = id;
-          entities[component_amount] = new entity{
-            new movement_component({0,0,0}, {dx,dy,dz}),
-            new appearance_component{c, 10, 10, 10, false}
+          sparse[id] = active;
+          dense[active] = id;
+          agents[active] = new entity{
+            new movement_component(
+              {0,0,0},
+              {
+              dirlux[k % DIRECTIONS],
+              dirluy[k % DIRECTIONS],
+              dirluz[k % DIRECTIONS]
+              }),
+            new appearance_component{pdcolors[k % DIRECTIONS], 10, 10, 10}
           };
-          component_amount++;
+          active++;
         }
         ++num_of_spawns;
       }
@@ -344,12 +332,13 @@ void oop_condes()
     DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
     DrawText(TextFormat("Cubes: %i", entity_count-count), 0, 50, 20, RED);
     EndDrawing();
+    if(iterations >= MAX_FRAMES) break;
   }
+  avgframetime = total_frametime / iterations;
 }
 
 void oop_static()
 {
-  entity** entities = (entity**) malloc(sizeof(entity*) * ENTITY_AMOUNT);
   Camera camera {
               { .0f, 5.0f, -600.0f},
               { .0f, 5.0f, .0f},
@@ -357,63 +346,49 @@ void oop_static()
               60,
               CAMERA_PERSPECTIVE
             };
-  static std::random_device device;
-  static std::default_random_engine engine(device());
-  static std::uniform_real_distribution<> real_vel_distr(-20, 20);
-  static std::uniform_int_distribution<> color_distr(0, UINT32_MAX);
-  size_t i = 0;
-  for(;i < ENTITY_AMOUNT / 2; i++)
+
+  const auto agents = new entity*[ENTITY_AMOUNT];
+
+  for(size_t i = 0; i < ENTITY_AMOUNT; i++)
   {
-    const auto dx = (float)real_vel_distr(engine);
-    const auto dy = (float)real_vel_distr(engine);
-    const auto dz = (float)real_vel_distr(engine);
-    const Color c = GetColor(color_distr(engine)| 0xff);
-    entities[i] = new entity{
-      new movement_component({0,0,0}, {dx,dy,dz}),
-      new appearance_component(c,5, 5, 5, false)
+    agents[i] = new entity{
+      new movement_component(
+        {0,0,0},
+        {
+        dirlux[i % DIRECTIONS],
+        dirluy[i % DIRECTIONS],
+        dirluz[i % DIRECTIONS]
+        }),
+      new appearance_component{pdcolors[i % DIRECTIONS], 10, 10, 10}
     };
   }
-  for(;i < ENTITY_AMOUNT; i++)
-  {
-    const auto dx = (float)real_vel_distr(engine);
-    const auto dy = (float)real_vel_distr(engine);
-    const auto dz = (float)real_vel_distr(engine);
-    const Color c = GetColor(color_distr(engine)| 0xff);
-    entities[i] = new entity{
-      new movement_component({0,0,0}, {dx,dy,dz}),
-      new appearance_component(c,5, 5, 5, true)
-    };
-  }
+
+  double iterations = 0;
+  double total_frametime = 0;
 
 
   while(!WindowShouldClose())
   {
     ClearBackground(BLACK);
+    ++iterations;
     const float dt = GetFrameTime();
+    total_frametime += dt;
     BeginDrawing();
     BeginMode3D(camera);
     take_inputs(camera, dt);
     DrawCubeWires(ARENA_ORIGIN, ARENA_DIM, ARENA_DIM, ARENA_DIM, ARENA_COL);
-    Color c;
-    if(MORPH)
-      c = GetColor(color_distr(engine)| 0xff);
     for(size_t k = 0; k < ENTITY_AMOUNT; k++)
     {
-      entity* e = entities[k];
-      const bool is_large = e->ac->large();
-      if(LARGE_ONLY)
-        if(!is_large) continue;
+      const entity* e = agents[k];
       e->in_bounds_static();
-      if(MORPH && is_large)
-        e->ac->set_color(c);
       e->move(dt);
       e->draw();
     }
     EndMode3D();
     DrawText(TextFormat("FPS: %i", GetFPS()), 0, 0, 20, RED);
     DrawText(TextFormat("Cubes: %i", ENTITY_AMOUNT), 0, 50, 20, RED);
-    DrawText(TextFormat("Morph: %i", MORPH ? 1 : 0), 0, 100, 20, RED);
-    DrawText(TextFormat("Large Only %i", LARGE_ONLY ? 1 : 0), 0, 150, 20, RED);
     EndDrawing();
+    if(iterations >= MAX_FRAMES) break;
   }
+  avgframetime = total_frametime / iterations;
 }

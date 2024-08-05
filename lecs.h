@@ -96,7 +96,7 @@ namespace ls::lecs
 
   struct atype
   {
-    explicit atype(const hash hash) : hash(hash)
+    explicit atype(const hash hash) : _hash(hash)
     {
       //sparse_components.reserve(tyfo::counter);
       entities.reserve(E_INIT);
@@ -176,7 +176,7 @@ namespace ls::lecs
       const ecsid swapped_eid = evict_entity(frow);
       return {new_row, swapped_eid};
     }
-    hash hash;
+    hash _hash;
     size_t size = 0;
     std::vector<ecsid> dense_components {};
     std::vector<size_t> sparse_components;
@@ -290,7 +290,7 @@ namespace ls::lecs
       }
 
       const hash chash = c_hashes[type_id];
-      const hash nhash = thash(r.at->hash, chash);
+      const hash nhash = thash(r.at->_hash, chash);
 
       atype* natype = get_next_atype(r.at, nhash, type_id, false, sizeof(T));
       auto [nrow, swent] = r.at->ereloc(natype, r.row);
@@ -311,7 +311,7 @@ namespace ls::lecs
       if(c_hashes.size() <= type_id || /* TODO !c_locations[id].contains(r.at->hash)*/ r.at->cidx(type_id) == SIZE_MAX) return 1;
 
       const hash chash = c_hashes[type_id];
-      const hash nhash = thash(r.at->hash, chash);
+      const hash nhash = thash(r.at->_hash, chash);
 
       atype* natype = get_next_atype(r.at, nhash, type_id, true, sizeof(T));
       auto [nrow, swent] = r.at->ereloc(natype, r.row, type_id);
