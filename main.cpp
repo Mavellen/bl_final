@@ -56,7 +56,7 @@ void take_inputs(Camera& camera, const float dt)
   CameraPitch(&camera, -GetMouseDelta().y * dt, true, false, false);
 }
 
-int ENTITY_AMOUNT = 1000000;
+int ENTITY_AMOUNT = 2000000;
 int SPAWN_RATE = 500;
 
 int main()
@@ -84,9 +84,9 @@ int main()
   //oop_condes();
   //dod_condes();
 
-  //max_static_raw();
+  max_static_raw();
   //oop_static_raw();
-  dod_static_raw();
+  //dod_static_raw();
 
   //max_static();
   //oop_static();
